@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TYPER - NEON TUBE [CONTROLS]</title>
+    <title>TYPER - SILVER MIST v2</title>
     <style>
         /* =========================================
            CORE STYLES
@@ -14,6 +14,10 @@
             --text-dim: #666666;
             --tube-green: #33ff33;
             --tube-glow: 0 0 2px #33ff33, 0 0 8px rgba(51, 255, 51, 0.6), 0 0 15px rgba(51, 255, 51, 0.2);
+            
+            /* 氤氲银白配色 */
+            --mist-silver: #e0e6ed;
+            
             --panel-bg: rgba(5, 5, 5, 0.95);
             --font-stack: "Menlo", "Monaco", "Consolas", "Courier New", monospace;
         }
@@ -28,6 +32,7 @@
         #visual-canvas {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             z-index: 0; opacity: 0.8;
+            transition: opacity 2s ease;
         }
 
         #terminal-ui {
@@ -35,12 +40,46 @@
             padding: 20px; box-sizing: border-box;
             display: flex; flex-direction: column;
             pointer-events: none; 
+            transition: opacity 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* === 变暗模式 (Hide Mode) === */
+        #terminal-ui.text-dimmed {
+            opacity: 0.08; /* 极暗，近乎隐形 */
+        }
+        /* 鼠标悬停时微微提亮，方便用户找回输入框 */
+        #terminal-ui.text-dimmed:hover {
+            opacity: 0.2; 
         }
 
         .neon-text {
             color: var(--tube-green);
             text-shadow: var(--tube-glow);
             font-weight: bold; letter-spacing: 1px;
+        }
+
+        /* === 氤氲银白标题 (Misty Silver) === */
+        @keyframes mist-breathe {
+            0% { 
+                text-shadow: 0 0 5px rgba(224, 230, 237, 0.5), 0 0 10px rgba(224, 230, 237, 0.1); 
+                opacity: 0.7; 
+            }
+            50% { 
+                text-shadow: 0 0 15px rgba(224, 230, 237, 0.9), 0 0 30px rgba(224, 230, 237, 0.5), 0 0 45px rgba(224, 230, 237, 0.2); 
+                opacity: 1; 
+            }
+            100% { 
+                text-shadow: 0 0 5px rgba(224, 230, 237, 0.5), 0 0 10px rgba(224, 230, 237, 0.1); 
+                opacity: 0.7; 
+            }
+        }
+        
+        .silver-title {
+            color: var(--mist-silver);
+            font-weight: 900; 
+            letter-spacing: 4px;
+            font-size: 16px;
+            animation: mist-breathe 6s ease-in-out infinite; /* 呼吸动画 */
         }
         
         .header-info {
@@ -65,7 +104,6 @@
             flex-grow: 1; display: flex; flex-direction: column;
             justify-content: flex-end; padding-bottom: 15px;
             pointer-events: auto;
-            transition: opacity 0.5s ease; 
             overflow-y: auto; min-height: 0; scrollbar-width: none;
         }
         #terminal-history::-webkit-scrollbar { display: none; }
@@ -93,7 +131,7 @@
         }
         #file-input { display: none; }
 
-        /* === 视觉面板样式 === */
+        /* === 面板与Playbar === */
         #control-panel {
             position: absolute; top: 60px; right: 20px;
             width: 400px; max-height: calc(100% - 100px); 
@@ -116,7 +154,6 @@
         .close-btn:hover { color: #fff; }
 
         .module-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-
         .module-btn {
             border: 1px solid #222; padding: 6px 10px; cursor: pointer;
             font-size: 11px; color: #777; transition: all 0.1s; text-align: left;
@@ -131,7 +168,6 @@
             box-shadow: inset 0 0 10px rgba(51, 255, 51, 0.1);
         }
 
-        /* === 新增：Playbar 样式 === */
         #audio-controls {
             position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
             width: 500px; background: var(--panel-bg);
@@ -176,7 +212,7 @@
 
 <div id="terminal-ui">
     <div class="header-info">
-        <div><span class="neon-text">TYPER</span> OMNI [v51.5 TUBE]</div>
+        <div><span class="silver-title">TYPER</span></div>
         <div id="sys-trigger">[ OPEN PANEL ]</div>
     </div>
 
@@ -221,8 +257,9 @@
 <script>
     // --- STATE ---
     const STATE = { mode: 0, isPlaying: false, playlist: [], trackIndex: 0 };
-    
-    // --- MODES (FILTERED LIST) ---
+    let appendMode = false;
+
+    // --- MODES (12 Selected) ---
     const MODES = [
         { id: 0, name: "SPECTRUM BARS", desc: "Standard freq analysis" },
         { id: 1, name: "OSCILLOSCOPE", desc: "Raw waveform" },
@@ -272,7 +309,6 @@
         bufferLength = analyser.frequencyBinCount;
         dataArray = new Uint8Array(bufferLength);
         
-        // Audio Listeners for UI
         audioEl.addEventListener('ended', () => playNext());
         audioEl.addEventListener('timeupdate', updateProgress);
         audioEl.addEventListener('loadedmetadata', updateProgress);
@@ -302,7 +338,6 @@
         const curr = audioEl.currentTime;
         const dur = audioEl.duration || 0;
         const pct = dur > 0 ? (curr / dur) * 100 : 0;
-        
         DOM.acFill.style.width = `${pct}%`;
         DOM.acTime.textContent = `${formatTime(curr)} / ${formatTime(dur)}`;
     }
@@ -320,15 +355,12 @@
         }
     }
     
-    // Seek functionality
     DOM.acBg.addEventListener('click', (e) => {
         if(!audioEl) return;
         const rect = DOM.acBg.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const pct = x / rect.width;
-        if(audioEl.duration) {
-            audioEl.currentTime = pct * audioEl.duration;
-        }
+        if(audioEl.duration) audioEl.currentTime = pct * audioEl.duration;
     });
 
     // --- MAIN RENDER LOOP ---
@@ -410,13 +442,13 @@
         STATE.trackIndex = idx;
         const file = STATE.playlist[idx]; initAudio();
         audioEl.src = URL.createObjectURL(file);
-        
         DOM.acTitle.textContent = `${idx+1}. ${file.name}`;
         
         audioEl.play().then(() => {
             STATE.isPlaying = true; 
             log(`Playing: ${file.name}`, "success");
             DOM.trigger.style.display = "block";
+            DOM.playbar.style.display = "block";
             DOM.btnPlay.textContent = "PAUSE";
             DOM.btnPlay.style.color = "var(--tube-green)";
         });
@@ -426,11 +458,30 @@
     function prevTrack() { playTrack(STATE.trackIndex - 1); }
 
     const COMMANDS = {
-        'load': () => { document.getElementById('file-input').click(); return "Mounting..."; },
+        'load': () => { 
+            appendMode = false;
+            document.getElementById('file-input').click(); 
+            return "Mounting new playlist..."; 
+        },
+        'add': () => {
+            if (STATE.playlist.length === 0) {
+                appendMode = false;
+                document.getElementById('file-input').click();
+                return "Mounting first tracks...";
+            }
+            appendMode = true;
+            document.getElementById('file-input').click();
+            return "Select files to append...";
+        },
         'play': () => { togglePlay(); return STATE.isPlaying ? "Resuming..." : "Holding..."; },
         'pause': () => { togglePlay(); return "Paused."; },
         'playbar': () => togglePlaybar(),
-        'help': () => "CMDS: load, play, pause, playbar, [Tab]"
+        'hide': () => {
+             // 切换 class，如果存在则移除，如果不存在则添加
+             DOM.ui.classList.toggle('text-dimmed');
+             return DOM.ui.classList.contains('text-dimmed') ? "STEALTH MODE. (Type 'hide' to restore)" : "VISIBILITY RESTORED.";
+        },
+        'help': () => "CMDS: load, add, play, hide, playbar"
     };
 
     DOM.input.addEventListener('keydown', (e) => {
@@ -442,13 +493,23 @@
             else { log("Unknown Protocol.", "warn"); }
         }
     });
+
     document.getElementById('file-input').addEventListener('change', (e) => {
-        STATE.playlist = Array.from(e.target.files);
-        log(`Buffer: ${STATE.playlist.length} files mounted.`, "success"); playTrack(0);
-        DOM.playbar.style.display = "block"; // Auto show playbar on load
+        const newFiles = Array.from(e.target.files);
+        if (newFiles.length === 0) return;
+
+        if (appendMode) {
+            STATE.playlist = STATE.playlist.concat(newFiles);
+            log(`Added ${newFiles.length} tracks. Total: ${STATE.playlist.length}`, "success");
+        } else {
+            STATE.playlist = newFiles;
+            log(`Buffer: ${STATE.playlist.length} files mounted.`, "success");
+            playTrack(0);
+        }
+        e.target.value = '';
     });
 
-    initPanel(); log("TYPER OMNI CORE TUBE [ONLINE]", "sys"); render();
+    initPanel(); log("TYPER SILVER CORE [ONLINE]", "sys"); render();
 </script>
 </body>
 </html>
